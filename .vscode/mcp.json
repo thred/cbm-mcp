@@ -1,0 +1,10 @@
+{
+    "servers": {
+        "cbm-monitor-mcp": {
+            "type": "stdio",
+            "command": "node",
+            "args": ["${workspaceFolder}/dist/stdio.js"]
+        }
+    },
+    "inputs": []
+}

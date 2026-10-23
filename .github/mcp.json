@@ -1,0 +1,11 @@
+{
+    "mcpServers": {
+        "cbm-monitor-mcp": {
+            "type": "local",
+            "tools": ["*"],
+            "id": "",
+            "command": "node",
+            "args": ["${workspaceFolder}/dist/stdio.js"]
+        }
+    }
+}

@@ -1,0 +1,81 @@
+lockfile_version: "1"
+dependencies: []
+deployments:
+    - kind: project-relative
+      target: legacy
+      value: .agents/skills/cbm-mcp
+      runtime: null
+      scope: project
+      owners:
+          - .
+      active_owner: .
+      content_hash: null
+    - kind: project-relative
+      target: legacy
+      value: .agents/skills/cbm-mcp/SKILL.md
+      runtime: null
+      scope: project
+      owners:
+          - .
+      active_owner: .
+      content_hash: sha256:cbb85667cb6a1d73f9fcffdf56a865618dc70b3c8ce14b6427c328bd7c742cf5
+    - kind: project-relative
+      target: legacy
+      value: .agents/skills/cbm-mcp/references/6510-assembly.md
+      runtime: null
+      scope: project
+      owners:
+          - .
+      active_owner: .
+      content_hash: sha256:f855e805a7b03a7c47081a005a458e860d189af21d847b377a4bdfd3d3da2456
+    - kind: project-relative
+      target: legacy
+      value: .agents/skills/cbm-mcp/references/c64-memory-map.md
+      runtime: null
+      scope: project
+      owners:
+          - .
+      active_owner: .
+      content_hash: sha256:f1211649ba6b43923046731e1058ef08905a446db0212ed609ebf1aa4485db43
+    - kind: uri
+      target: mcp
+      value: cbm-monitor-mcp
+      runtime: copilot
+      scope: project
+      owners:
+          - .
+      active_owner: .
+      content_hash: null
+    - kind: uri
+      target: mcp
+      value: cbm-monitor-mcp
+      runtime: vscode
+      scope: project
+      owners:
+          - .
+      active_owner: .
+      content_hash: null
+mcp_servers:
+    - cbm-monitor-mcp
+mcp_configs:
+    cbm-monitor-mcp:
+        name: cbm-monitor-mcp
+        transport: stdio
+        args:
+            - ${workspaceFolder}/dist/stdio.js
+        registry: false
+        command: node
+mcp_target_servers:
+    copilot:
+        - cbm-monitor-mcp
+    vscode:
+        - cbm-monitor-mcp
+local_deployed_files:
+    - .agents/skills/cbm-mcp
+    - .agents/skills/cbm-mcp/SKILL.md
+    - .agents/skills/cbm-mcp/references/6510-assembly.md
+    - .agents/skills/cbm-mcp/references/c64-memory-map.md
+local_deployed_file_hashes:
+    .agents/skills/cbm-mcp/SKILL.md: sha256:cbb85667cb6a1d73f9fcffdf56a865618dc70b3c8ce14b6427c328bd7c742cf5
+    .agents/skills/cbm-mcp/references/6510-assembly.md: sha256:f855e805a7b03a7c47081a005a458e860d189af21d847b377a4bdfd3d3da2456
+    .agents/skills/cbm-mcp/references/c64-memory-map.md: sha256:f1211649ba6b43923046731e1058ef08905a446db0212ed609ebf1aa4485db43

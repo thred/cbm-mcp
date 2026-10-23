@@ -1,0 +1,53 @@
+{
+    "name": "cbm-mcp",
+    "version": "1.0.0",
+    "description": "MCP for debugging CBM software using ViceEmu",
+    "license": "MIT",
+    "author": "Manfred Hantschel",
+    "type": "module",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "files": [
+        "dist"
+    ],
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.js"
+        }
+    },
+    "scripts": {
+        "start": "node dist/stdio.js",
+        "dev": "tsx src/stdio.ts",
+        "build": "npm run clean && tsc",
+        "watch": "tsc --watch --preserveWatchOutput",
+        "clean": "rm -rf dist",
+        "test": "vitest run",
+        "test:live": "npm run build && VICE_LIVE_TEST=1 vitest run test/live.test.ts",
+        "test:typecheck": "tsc --noEmit -p tsconfig.test.json",
+        "lint": "eslint src --ext .ts --fix & npm run prettier",
+        "prettier": "prettier --write .",
+        "test-build": "node build.ts",
+        "dependencies:update": "npx npm-check-updates -u && npm install",
+        "dependencies:circular": "cbm-tools % npx madge --circular --extensions ts ./",
+        "clean:src": "find ./src \\( -name '*.d.ts' -o -name '*.d.ts.map' -o -name '*.js' -o -name '*.js.map' \\) -delete"
+    },
+    "devDependencies": {
+        "@eslint/js": "^10.0.1",
+        "@types/node": "^26.6.5",
+        "eslint": "^10.13.0",
+        "prettier": "^3.9.10",
+        "source-map-support": "^0.5.21",
+        "tsx": "^4.23.15",
+        "typescript": "^6.0.3",
+        "typescript-eslint": "^8.72.0",
+        "vitest": "^5.0.5"
+    },
+    "engines": {
+        "node": ">=24.0.0",
+        "npm": ">=11.0.0"
+    },
+    "dependencies": {
+        "@modelcontextprotocol/sdk": "^1.32.1"
+    }
+}

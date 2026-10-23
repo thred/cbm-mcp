@@ -1,0 +1,20 @@
+name: cbm-mcp
+version: 1.0.0
+description: APM project for cbm-mcp
+author: Manfred Hantschel
+# Which agent platforms to deploy to.
+# Resolution order: --target flag > this field > auto-detect from filesystem.
+# Accepted values: agent-skills, antigravity, claude, codex, copilot, cursor, gemini, grok-build, hermes, kiro, opencode, vscode, windsurf
+targets:
+  - copilot
+  - vscode
+dependencies:
+  apm: []
+  mcp:
+    - name: cbm-monitor-mcp
+      registry: false
+      transport: stdio
+      command: node
+      args: ["${workspaceFolder}/dist/stdio.js"]
+includes: auto
+scripts: {}
