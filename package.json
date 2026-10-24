@@ -48,6 +48,7 @@
         "npm": ">=11.0.0"
     },
     "dependencies": {
-        "@modelcontextprotocol/sdk": "^1.32.1"
+        "@modelcontextprotocol/sdk": "^1.32.1",
+        "jimp": "^1.6.1"
     }
 }

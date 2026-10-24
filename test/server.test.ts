@@ -254,6 +254,8 @@ describe("VICE MCP tools", () => {
                 "screen",
                 "sidefx",
                 "resume",
+                "export_sprites",
+                "export_font",
             ].map((name) => `vice_${name}`),
         );
         const { tools } = await client.listTools();

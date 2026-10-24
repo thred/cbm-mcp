@@ -18,7 +18,7 @@ deployments:
       owners:
           - .
       active_owner: .
-      content_hash: sha256:cbb85667cb6a1d73f9fcffdf56a865618dc70b3c8ce14b6427c328bd7c742cf5
+      content_hash: sha256:36827df153a411b75fce1efab4ff2bd2dba0de47208de68b4f76413a7b256937
     - kind: project-relative
       target: legacy
       value: .agents/skills/cbm-mcp/references/6510-assembly.md
@@ -37,6 +37,15 @@ deployments:
           - .
       active_owner: .
       content_hash: sha256:f1211649ba6b43923046731e1058ef08905a446db0212ed609ebf1aa4485db43
+    - kind: project-relative
+      target: legacy
+      value: .agents/skills/cbm-mcp/references/vic2.md
+      runtime: null
+      scope: project
+      owners:
+          - .
+      active_owner: .
+      content_hash: sha256:43fdc9444c04e91ca6ea3abb7dd45b202c3e0b827e4d096ab0edfb6888ea4f01
     - kind: uri
       target: mcp
       value: cbm-monitor-mcp
@@ -75,7 +84,9 @@ local_deployed_files:
     - .agents/skills/cbm-mcp/SKILL.md
     - .agents/skills/cbm-mcp/references/6510-assembly.md
     - .agents/skills/cbm-mcp/references/c64-memory-map.md
+    - .agents/skills/cbm-mcp/references/vic2.md
 local_deployed_file_hashes:
-    .agents/skills/cbm-mcp/SKILL.md: sha256:cbb85667cb6a1d73f9fcffdf56a865618dc70b3c8ce14b6427c328bd7c742cf5
+    .agents/skills/cbm-mcp/SKILL.md: sha256:36827df153a411b75fce1efab4ff2bd2dba0de47208de68b4f76413a7b256937
     .agents/skills/cbm-mcp/references/6510-assembly.md: sha256:f855e805a7b03a7c47081a005a458e860d189af21d847b377a4bdfd3d3da2456
     .agents/skills/cbm-mcp/references/c64-memory-map.md: sha256:f1211649ba6b43923046731e1058ef08905a446db0212ed609ebf1aa4485db43
+    .agents/skills/cbm-mcp/references/vic2.md: sha256:43fdc9444c04e91ca6ea3abb7dd45b202c3e0b827e4d096ab0edfb6888ea4f01

@@ -1,4 +1,6 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
 import {
     McpUtils,
     type FormattedArguments,
@@ -7,6 +9,7 @@ import {
     type ToolField,
 } from "../mcp-utils.js";
 import type { MonitorClient } from "./monitor-client.js";
+import { CHAR_BYTES, parseMemoryDump, renderFontSheet, renderSpriteSheet, SPRITE_BYTES } from "./sprite-export.js";
 import { encodeCommodoreText, type TextEncoding } from "./text-encoding.js";
 
 type Tokens = FormattedArguments;
@@ -14,16 +17,20 @@ type DispatchMode = "reply" | "send" | "assemble";
 type Field = ToolField;
 
 export class ViceMonitorTools {
-    static readonly EMPTY_INPUT: Tool["inputSchema"] = { type: "object", properties: {}, additionalProperties: false };
+    private static readonly EMPTY_INPUT: Tool["inputSchema"] = {
+        type: "object",
+        properties: {},
+        additionalProperties: false,
+    };
 
-    static readonly START_SCHEMA = {
+    private static readonly START_SCHEMA = {
         type: "integer",
         minimum: 0,
         maximum: 65535,
         description: "Start address as a decimal JSON integer.",
     };
 
-    static readonly LENGTH_SCHEMA = {
+    private static readonly LENGTH_SCHEMA = {
         type: "integer",
         minimum: 1,
         maximum: 256,
@@ -31,74 +38,74 @@ export class ViceMonitorTools {
         description: "Number of bytes in the inclusive address range (not instruction count). No address wraparound.",
     };
 
-    static readonly RANGE_SCHEMA: Tool["inputSchema"] = {
+    private static readonly RANGE_SCHEMA: Tool["inputSchema"] = {
         type: "object",
         properties: { start: this.START_SCHEMA, length: this.LENGTH_SCHEMA },
         required: ["start"],
         additionalProperties: false,
     };
 
-    static readonly CHECKPOINT_SCHEMA = {
+    private static readonly CHECKPOINT_SCHEMA = {
         type: "integer",
         minimum: 1,
         maximum: 2147483647,
         description: "Checkpoint ID returned by VICE, not a memory address.",
     };
 
-    static readonly LABEL = /^\.[A-Za-z_][A-Za-z0-9_.]*$/;
+    private static readonly LABEL = /^\.[A-Za-z_][A-Za-z0-9_.]*$/;
 
-    static readonly ADDRESS = /^(?:\.[A-Za-z_][A-Za-z0-9_.]*|(?:(?:[Cc]|8|9|10|11):)?\$[0-9a-fA-F]{1,4})$/;
+    private static readonly ADDRESS = /^(?:\.[A-Za-z_][A-Za-z0-9_.]*|(?:(?:[Cc]|8|9|10|11):)?\$[0-9a-fA-F]{1,4})$/;
 
-    static readonly EXPRESSION = /^[A-Za-z0-9_.$%:@[\]()+\-*/&|!<>= \t]+$/;
+    private static readonly EXPRESSION = /^[A-Za-z0-9_.$%:@[\]()+\-*/&|!<>= \t]+$/;
 
-    static readonly number = McpUtils.numberField;
+    private static readonly number = McpUtils.numberField;
 
-    static readonly enumeration = McpUtils.enumerationField;
+    private static readonly enumeration = McpUtils.enumerationField;
 
-    static readonly text = McpUtils.textField;
+    private static readonly text = McpUtils.textField;
 
-    static readonly quoted = McpUtils.quotedField;
+    private static readonly quoted = McpUtils.quotedField;
 
-    static readonly keyboardText = McpUtils.keyboardTextField;
+    private static readonly keyboardText = McpUtils.keyboardTextField;
 
-    static readonly optional = McpUtils.optionalField;
+    private static readonly optional = McpUtils.optionalField;
 
-    static readonly array = McpUtils.arrayField;
+    private static readonly array = McpUtils.arrayField;
 
-    static readonly parts = McpUtils.joinArguments;
+    private static readonly parts = McpUtils.joinArguments;
 
-    static readonly expression: Field = {
+    private static readonly expression: Field = {
         schema: { type: "string", minLength: 1, maxLength: 1024 },
         format: this.formatExpression,
     };
 
-    static readonly space = this.enumeration(["C:", "8:", "9:", "10:", "11:"]);
+    private static readonly space = this.enumeration(["C:", "8:", "9:", "10:", "11:"]);
 
-    static readonly identifier = this.text(/^[A-Za-z_][A-Za-z0-9_]*$/, "an identifier", 64);
+    private static readonly identifier = this.text(/^[A-Za-z_][A-Za-z0-9_]*$/, "an identifier", 64);
 
-    static readonly label = this.text(this.LABEL, "a label beginning with a dot", 128);
+    private static readonly label = this.text(this.LABEL, "a label beginning with a dot", 128);
 
-    static readonly path = this.quoted("a path on the VICE host");
+    private static readonly path = this.quoted("a path on the VICE host");
 
-    static readonly checkpoint = this.number(1, 2147483647, true);
+    private static readonly checkpoint = this.number(1, 2147483647, true);
 
-    static readonly fileDevice = this.enumeration([0, 8, 9, 10, 11]);
+    private static readonly fileDevice = this.enumeration([0, 8, 9, 10, 11]);
 
-    static readonly mediaDevice = this.enumeration([1, 2, 8, 9, 10, 11, 32], true);
+    private static readonly mediaDevice = this.enumeration([1, 2, 8, 9, 10, 11, 32], true);
 
-    static readonly state = this.enumeration(["on", "off", "toggle"]);
+    private static readonly state = this.enumeration(["on", "off", "toggle"]);
 
-    static readonly bytes = this.array(this.number(0, 255));
+    private static readonly bytes = this.array(this.number(0, 255));
 
-    static readonly range = { start: this.address(), end: this.optional(this.address()) };
+    private static readonly range = { start: this.address(), end: this.optional(this.address()) };
 
-    static readonly fileInput = {
+    private static readonly fileInput = {
         path: this.path,
         device: this.fileDevice,
         address: this.optional(this.address()),
     };
 
-    static readonly instruction: Field = {
+    private static readonly instruction: Field = {
         schema: {
             type: "string",
             minLength: 1,
@@ -111,83 +118,27 @@ export class ViceMonitorTools {
                     "Expected one assembly instruction, without colon or semicolon (maximum 256 characters).",
                 );
             }
+
             if (value.includes(":") || value.includes(";")) {
                 throw new Error("Expected one assembly instruction, without colon or semicolon.");
             }
+
             const [mnemonic, ...operandParts] = value.trim().split(/[ \t]+/);
+
             if (!/^[A-Za-z]{2,5}$/.test(mnemonic)) {
                 throw new Error("Expected one assembly instruction, without colon or semicolon.");
             }
+
             const operand = operandParts.join(" ");
             const allowed = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.$%#()+,\\-/<>=[] ' \t";
+
             if (operand && [...operand].some((character) => !allowed.includes(character))) {
                 throw new Error("Expected one assembly instruction, without colon or semicolon.");
             }
+
             return value;
         },
     };
-    static fieldTool(
-        name: string,
-        description: string,
-        fields: Record<string, Field>,
-        destructive = true,
-    ): McpToolMetadata {
-        return McpUtils.toolMetadata(`vice_${name}`, `${description} Auto-connects and may pause emulation.`, fields, {
-            readOnlyHint: false,
-            destructiveHint: destructive,
-        });
-    }
-
-    static formatExpression(value: unknown): string {
-        if (
-            typeof value !== "string" ||
-            !value.trim() ||
-            value.length > 1024 ||
-            /[\r\n]/.test(value) ||
-            !ViceMonitorTools.EXPRESSION.test(value)
-        ) {
-            throw new Error(
-                "Expected a single-line VICE expression without quotes or command separators (maximum 1024 characters).",
-            );
-        }
-        return value.trim();
-    }
-
-    static addresses(args: Tokens): string {
-        const end = args.end || args.start;
-        if (
-            /^\$[0-9a-f]+$/i.test(args.start) &&
-            /^\$[0-9a-f]+$/i.test(end) &&
-            parseInt(end.slice(1), 16) < parseInt(args.start.slice(1), 16)
-        ) {
-            throw new Error("The end address must not precede the start address.");
-        }
-        return `${args.start} ${end}`;
-    }
-
-    static address(): Field {
-        return {
-            schema: {
-                oneOf: [
-                    { type: "integer", minimum: 0, maximum: 65535 },
-                    { type: "string", pattern: this.ADDRESS.source },
-                ],
-                description:
-                    "Numeric address or .label in the current device; numeric strings may include C:/8:/9:/10:/11: prefixes.",
-            },
-            format: (value) => {
-                if (typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 65535) {
-                    return `$${value.toString(16).padStart(4, "0")}`;
-                }
-                if (typeof value === "string" && !/[\r\n]/.test(value) && this.ADDRESS.test(value)) {
-                    return value;
-                }
-                throw new Error(
-                    "Expected an address from 0 to 65535, a .label, or a space-qualified address such as 8:$1000.",
-                );
-            },
-        };
-    }
 
     constructor(private readonly monitor: MonitorClient) {}
 
@@ -227,6 +178,7 @@ export class ViceMonitorTools {
     })
     async connect(): Promise<string> {
         await this.monitor.connect();
+
         return `Connected to ${this.monitor.host}:${this.monitor.port}. Emulation is paused in the monitor.`;
     }
 
@@ -237,6 +189,7 @@ export class ViceMonitorTools {
     })
     async disconnect(): Promise<string> {
         await this.monitor.disconnect();
+
         return "Disconnected. No resume or quit command was sent.";
     }
 
@@ -266,11 +219,14 @@ export class ViceMonitorTools {
     memory(args: ToolArguments): Promise<string> {
         const start = McpUtils.integer(args, "start", 0, 65535);
         const length = McpUtils.integer(args, "length", 1, 256, 64);
+
         if (start + length > 65536) {
             throw new Error("The address range must not wrap past $ffff.");
         }
+
         const format = McpUtils.choice(args, "format", ["hex", "petscii", "screen_codes"], "hex");
         const command = format === "hex" ? "mem H" : format === "petscii" ? "i" : "ii";
+
         return this.monitor.execute(`${command} C:${McpUtils.hex(start)} C:${McpUtils.hex(start + length - 1)}`);
     }
 
@@ -283,9 +239,11 @@ export class ViceMonitorTools {
     disassemble(args: ToolArguments): Promise<string> {
         const start = McpUtils.integer(args, "start", 0, 65535);
         const length = McpUtils.integer(args, "length", 1, 256, 64);
+
         if (start + length > 65536) {
             throw new Error("The address range must not wrap past $ffff.");
         }
+
         return this.monitor.execute(`disass C:${McpUtils.hex(start)} C:${McpUtils.hex(start + length - 1)}`);
     }
 
@@ -305,9 +263,11 @@ export class ViceMonitorTools {
     step(args: ToolArguments): Promise<string> {
         const count = McpUtils.integer(args, "count", 1, 1000, 1);
         const mode = args.mode === undefined ? "into" : args.mode;
+
         if (mode !== "into" && mode !== "over") {
             throw new Error("mode must be into or over.");
         }
+
         return this.monitor.execute(`${mode === "into" ? "step" : "next"} ${McpUtils.hex(count)}`);
     }
 
@@ -351,6 +311,7 @@ export class ViceMonitorTools {
         const start = McpUtils.integer(args, "start", 0, 65535);
         const end = McpUtils.integer(args, "end", start, 65535, start);
         const operations = args.operations ?? ["exec"];
+
         if (
             !Array.isArray(operations) ||
             operations.length < 1 ||
@@ -360,6 +321,7 @@ export class ViceMonitorTools {
         ) {
             throw new Error("operations must contain 1-3 unique entries from exec, load, store.");
         }
+
         return this.monitor.execute(`break ${operations.join(" ")} C:${McpUtils.hex(start)} C:${McpUtils.hex(end)}`);
     }
 
@@ -391,9 +353,11 @@ export class ViceMonitorTools {
     })
     checkpointToggle(args: ToolArguments): Promise<string> {
         const id = McpUtils.integer(args, "id", 1, 2147483647);
+
         if (typeof args.enabled !== "boolean") {
             throw new Error("enabled must be a boolean.");
         }
+
         return this.monitor.execute(`${args.enabled ? "enable" : "disable"} ${id}`);
     }
 
@@ -415,6 +379,7 @@ export class ViceMonitorTools {
     registerSet(args: ToolArguments): Promise<string> {
         const register = McpUtils.choice(args, "register", ["PC", "A", "X", "Y", "SP", "FL"]);
         const value = McpUtils.integer(args, "value", 0, register === "PC" ? 65535 : 255);
+
         return this.monitor.execute(`registers ${register} = ${McpUtils.hex(value)}`);
     }
 
@@ -443,12 +408,15 @@ export class ViceMonitorTools {
     })
     memoryWrite(args: ToolArguments): Promise<string> {
         const start = McpUtils.integer(args, "start", 0, 65535);
+
         if ((args.bytes === undefined) === (args.text === undefined)) {
             throw new Error("Supply bytes or text, not both.");
         }
+
         if (args.bytes !== undefined && args.encoding !== undefined) {
             throw new Error("encoding applies only to text.");
         }
+
         const values =
             args.text === undefined
                 ? args.bytes
@@ -461,6 +429,7 @@ export class ViceMonitorTools {
                           "petscii",
                       ) as TextEncoding,
                   );
+
         if (
             !Array.isArray(values) ||
             values.length < 1 ||
@@ -469,9 +438,11 @@ export class ViceMonitorTools {
         ) {
             throw new Error("bytes must contain 1-256 integer values from 0 to 255.");
         }
+
         if (start + values.length > 65536) {
             throw new Error("The address range must not wrap past $ffff.");
         }
+
         return this.monitor.execute(
             `> C:${McpUtils.hex(start)} ${values.map((byte: number) => McpUtils.hex(byte, 2)).join(" ")}`,
         );
@@ -491,9 +462,11 @@ export class ViceMonitorTools {
         if (args.command === undefined) {
             return this.monitor.execute("help");
         }
+
         if (typeof args.command !== "string" || !/^(?:[A-Za-z][A-Za-z0-9_]{0,31}|>)$/.test(args.command)) {
             throw new Error("command must be a single monitor command name or >.");
         }
+
         return this.monitor.execute(`help ${args.command}`);
     }
 
@@ -532,9 +505,11 @@ export class ViceMonitorTools {
         if (args.enabled === undefined) {
             return this.monitor.execute("sidefx");
         }
+
         if (typeof args.enabled !== "boolean") {
             throw new Error("enabled must be a boolean.");
         }
+
         return this.monitor.execute(`sidefx ${args.enabled ? "on" : "off"}`);
     }
 
@@ -546,6 +521,7 @@ export class ViceMonitorTools {
     })
     async resume(): Promise<string> {
         await this.monitor.resume();
+
         return "Resume command sent. Monitor connection closed.";
     }
 
@@ -585,6 +561,7 @@ export class ViceMonitorTools {
         if ((args.value === undefined) === (args.text === undefined)) {
             throw new Error("Supply value or text, not both.");
         }
+
         if (args.text !== undefined) {
             const encoding = McpUtils.choice(
                 args,
@@ -594,10 +571,13 @@ export class ViceMonitorTools {
             ) as TextEncoding;
             return JSON.stringify({ encoding, bytes: encodeCommodoreText(args.text, encoding) });
         }
+
         if (args.encoding !== undefined) {
             throw new Error("encoding applies only to text.");
         }
+
         const value = McpUtils.integer(args, "value", 0, 4294967295);
+
         return this.monitor.execute(`~ ${McpUtils.hex(value, 1)}`);
     }
 
@@ -849,20 +829,25 @@ export class ViceMonitorTools {
             codes: ViceMonitorTools.optional(ViceMonitorTools.array(ViceMonitorTools.number(0, 255))),
             submit: ViceMonitorTools.optional(ViceMonitorTools.enumeration([true, false])),
         };
+
         return this.fieldCommand(args, fields, (values) => {
             if (values.text && values.codes) {
                 throw new Error("Supply text or codes, not both.");
             }
+
             if (values.text) {
                 return `keybuf ${values.text}${values.submit === "true" ? "\\x0d" : ""}`;
             }
+
             if (!values.codes) {
                 throw new Error("Supply text or codes.");
             }
+
             const escaped = values.codes
                 .split(" ")
                 .map((code) => `\\x${parseInt(code.slice(1), 16).toString(16).padStart(2, "0")}`)
                 .join("");
+
             return `keybuf ${escaped}${values.submit === "true" ? "\\x0d" : ""}`;
         });
     }
@@ -992,6 +977,438 @@ export class ViceMonitorTools {
             ViceMonitorTools.range,
             (values) => `memsprite ${ViceMonitorTools.addresses(values)}`,
         );
+    }
+
+    @McpUtils.tool({
+        name: "vice_export_sprites",
+        description:
+            "Export C64 sprite memory (64-byte blocks, RAM as seen by the VIC-II) to a host file, as a PNG sprite sheet or raw bytes. " +
+            "Defaults to the whole active VIC bank. Sprite colors and hires/multicolor mode are not stored with the data: unless given, " +
+            "the sheet is hires white on black. The result lists the current VIC sprite state (a snapshot; multiplexers change it per raster line). " +
+            "Auto-connects and pauses; temporarily selects banks io/ram and restores bank default.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                path: {
+                    type: "string",
+                    minLength: 1,
+                    maxLength: 4096,
+                    description: "Output file on the VICE host; .png for png.",
+                },
+                format: {
+                    type: "string",
+                    enum: ["png", "bin"],
+                    default: "png",
+                    description: "png sprite sheet or raw memory bytes.",
+                },
+                bank: {
+                    type: "integer",
+                    minimum: 0,
+                    maximum: 3,
+                    description:
+                        "VIC bank 0-3 ($4000 each). Default: active bank from $dd00. Ignored when start is given.",
+                },
+                start: {
+                    type: "integer",
+                    minimum: 0,
+                    maximum: 65535,
+                    description: "First RAM address of the region. Default: start of the bank.",
+                },
+                count: {
+                    type: "integer",
+                    minimum: 1,
+                    maximum: 1024,
+                    description: "Number of sprites. Default: up to the end of the bank.",
+                },
+                perRow: {
+                    type: "integer",
+                    minimum: 1,
+                    maximum: 64,
+                    default: 8,
+                    description: "Sprites per row in the sheet.",
+                },
+                multicolor: {
+                    type: "boolean",
+                    default: false,
+                    description: "Decode as multicolor (12 double-wide pixels per line) instead of hires.",
+                },
+                background: {
+                    type: "integer",
+                    minimum: 0,
+                    maximum: 15,
+                    default: 0,
+                    description: "Color index for transparent pixels.",
+                },
+                foreground: {
+                    type: "integer",
+                    minimum: 0,
+                    maximum: 15,
+                    default: 1,
+                    description: "Sprite color ($d027+n).",
+                },
+                multicolor1: {
+                    type: "integer",
+                    minimum: 0,
+                    maximum: 15,
+                    default: 12,
+                    description: "Multicolor 1 ($d025), bit pair 01.",
+                },
+                multicolor2: {
+                    type: "integer",
+                    minimum: 0,
+                    maximum: 15,
+                    default: 15,
+                    description: "Multicolor 2 ($d026), bit pair 11.",
+                },
+                scale: { type: "integer", minimum: 1, maximum: 16, default: 1, description: "Pixel scale factor." },
+            },
+            required: ["path"],
+            additionalProperties: false,
+        },
+    })
+    async exportSprites(args: ToolArguments): Promise<string> {
+        const format = McpUtils.choice(args, "format", ["png", "bin"], "png");
+        const path = args.path;
+
+        if (typeof path !== "string" || !path.trim() || path.length > 4096 || path.includes("\0")) {
+            throw new Error("path must be a nonempty file path.");
+        }
+
+        if (format === "png" && !path.toLowerCase().endsWith(".png")) {
+            throw new Error("path must end with .png for format png.");
+        }
+
+        const options = {
+            perRow: McpUtils.integer(args, "perRow", 1, 64, 8),
+            multicolor: args.multicolor === true,
+            background: McpUtils.integer(args, "background", 0, 15, 0),
+            foreground: McpUtils.integer(args, "foreground", 0, 15, 1),
+            multicolor1: McpUtils.integer(args, "multicolor1", 0, 15, 12),
+            multicolor2: McpUtils.integer(args, "multicolor2", 0, 15, 15),
+            scale: McpUtils.integer(args, "scale", 1, 16, 1),
+        };
+        const explicitStart = args.start !== undefined;
+        const explicitBank = args.bank !== undefined;
+        let start = explicitStart ? McpUtils.integer(args, "start", 0, 65535) : 0;
+        let bank = explicitBank ? McpUtils.integer(args, "bank", 0, 3) : 0;
+        let count = args.count === undefined ? 0 : McpUtils.integer(args, "count", 1, 1024);
+        let state: Record<string, unknown>;
+        let data: number[] = [];
+
+        try {
+            await this.monitor.execute("bank io");
+            const cia = parseMemoryDump(await this.monitor.execute("mem H $dd00 $dd00"));
+            const vic = parseMemoryDump(await this.monitor.execute("mem H $d011 $d02e"));
+
+            if (cia.length !== 1 || vic.length !== 0x1e) {
+                throw new Error("Could not read the VIC-II/CIA2 registers.");
+            }
+
+            const activeBank = 3 - (cia[0] & 3);
+            await this.monitor.execute("bank ram");
+
+            const screenBase = activeBank * 0x4000 + (vic[0x18 - 0x11] >> 4) * 0x400;
+            const pointers = parseMemoryDump(
+                await this.monitor.execute(
+                    `mem H ${McpUtils.hex(screenBase + 0x3f8)} ${McpUtils.hex(screenBase + 0x3ff)}`,
+                ),
+            );
+            const register = (address: number) => vic[address - 0x11];
+            state = {
+                activeBank,
+                screenBase: McpUtils.hex(screenBase),
+                multicolor1: register(0x25) & 15,
+                multicolor2: register(0x26) & 15,
+                sprites: pointers.map((pointer, index) => ({
+                    sprite: index,
+                    enabled: !!(register(0x15) & (1 << index)),
+                    multicolor: !!(register(0x1c) & (1 << index)),
+                    color: register(0x27 + index) & 15,
+                    pointer,
+                    address: McpUtils.hex(activeBank * 0x4000 + pointer * SPRITE_BYTES),
+                })),
+            };
+
+            if (!explicitBank) {
+                bank = activeBank;
+            }
+
+            if (!explicitStart) {
+                start = bank * 0x4000;
+            }
+
+            if (!count) {
+                count = Math.max(1, Math.floor((0x4000 - (start % 0x4000)) / SPRITE_BYTES));
+            }
+
+            const length = count * SPRITE_BYTES;
+
+            if (start + length > 0x10000) {
+                throw new Error("The sprite range must not wrap past $ffff.");
+            }
+
+            for (let offset = 0; offset < length; offset += 4096) {
+                const size = Math.min(4096, length - offset);
+                const chunk = parseMemoryDump(
+                    await this.monitor.execute(
+                        `mem H ${McpUtils.hex(start + offset)} ${McpUtils.hex(start + offset + size - 1)}`,
+                    ),
+                );
+
+                if (chunk.length !== size) {
+                    throw new Error(`Expected ${size} bytes at ${McpUtils.hex(start + offset)}, got ${chunk.length}.`);
+                }
+
+                data = data.concat(chunk);
+            }
+        } finally {
+            await this.monitor.execute("bank default").catch(() => undefined);
+        }
+
+        const target = resolve(path);
+        await mkdir(dirname(target), { recursive: true });
+
+        if (format === "bin") {
+            await writeFile(target, Uint8Array.from(data));
+        } else {
+            await renderSpriteSheet(Uint8Array.from(data), options).write(target as `${string}.png`);
+        }
+
+        return JSON.stringify({
+            path: target,
+            format,
+            start: McpUtils.hex(start),
+            end: McpUtils.hex(start + data.length - 1),
+            sprites: count,
+            ...(format === "png" ? { ...options } : {}),
+            vic: state,
+            note: "Colors/mode are not stored with sprite data; vic reflects the paused instant only.",
+        });
+    }
+
+    @McpUtils.tool({
+        name: "vice_export_font",
+        description:
+            "Export C64 character-set data (8-byte characters, as seen by the VIC-II incl. character ROM) to a host file as PNG sheet or raw bytes. " +
+            "Default: the font selected by $d018 in the active bank at this instant (raster effects and code-modified sets are not tracked); " +
+            "scope bank exports the whole VIC bank. Colors/mode are unknown: hires white on black unless given. Auto-connects and pauses; restores bank default.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                path: {
+                    type: "string",
+                    minLength: 1,
+                    maxLength: 4096,
+                    description: "Output file on the VICE host; .png for png.",
+                },
+                format: { type: "string", enum: ["png", "bin"], default: "png" },
+                scope: {
+                    type: "string",
+                    enum: ["font", "bank"],
+                    default: "font",
+                    description: "font: the active 2 KiB set; bank: the whole 16 KiB VIC bank (use when in doubt).",
+                },
+                bank: {
+                    type: "integer",
+                    minimum: 0,
+                    maximum: 3,
+                    description: "VIC bank 0-3 for scope bank or for an offset. Default: active bank.",
+                },
+                offset: {
+                    type: "integer",
+                    minimum: 0,
+                    maximum: 16383,
+                    description:
+                        "Offset within the VIC bank where the export starts (scope font: font base from $d018).",
+                },
+                count: {
+                    type: "integer",
+                    minimum: 1,
+                    maximum: 2048,
+                    description: "Number of characters. Default: 256 for scope font, up to the bank end for bank.",
+                },
+                perRow: { type: "integer", minimum: 1, maximum: 64, default: 16 },
+                multicolor: {
+                    type: "boolean",
+                    default: false,
+                    description: "Decode as multicolor characters (4 double-wide pixels per line).",
+                },
+                background: {
+                    type: "integer",
+                    minimum: 0,
+                    maximum: 15,
+                    default: 0,
+                    description: "Background ($d021), pair 00.",
+                },
+                foreground: {
+                    type: "integer",
+                    minimum: 0,
+                    maximum: 15,
+                    default: 1,
+                    description: "Character color (hires bit 1; multicolor pair 11).",
+                },
+                multicolor1: {
+                    type: "integer",
+                    minimum: 0,
+                    maximum: 15,
+                    default: 12,
+                    description: "Multicolor 1 ($d022), pair 01.",
+                },
+                multicolor2: {
+                    type: "integer",
+                    minimum: 0,
+                    maximum: 15,
+                    default: 15,
+                    description: "Multicolor 2 ($d023), pair 10.",
+                },
+                scale: { type: "integer", minimum: 1, maximum: 16, default: 1 },
+            },
+            required: ["path"],
+            additionalProperties: false,
+        },
+    })
+    async exportFont(args: ToolArguments): Promise<string> {
+        const format = McpUtils.choice(args, "format", ["png", "bin"], "png");
+        const scope = McpUtils.choice(args, "scope", ["font", "bank"], "font");
+        const path = args.path;
+
+        if (typeof path !== "string" || !path.trim() || path.length > 4096 || path.includes("\0")) {
+            throw new Error("path must be a nonempty file path.");
+        }
+
+        if (format === "png" && !path.toLowerCase().endsWith(".png")) {
+            throw new Error("path must end with .png for format png.");
+        }
+
+        const options = {
+            perRow: McpUtils.integer(args, "perRow", 1, 64, 16),
+            multicolor: args.multicolor === true,
+            background: McpUtils.integer(args, "background", 0, 15, 0),
+            foreground: McpUtils.integer(args, "foreground", 0, 15, 1),
+            multicolor1: McpUtils.integer(args, "multicolor1", 0, 15, 12),
+            multicolor2: McpUtils.integer(args, "multicolor2", 0, 15, 15),
+            scale: McpUtils.integer(args, "scale", 1, 16, 1),
+        };
+        let state: Record<string, unknown>;
+        let start: number;
+        let count: number;
+        let usesRom = false;
+        const data: number[] = [];
+
+        const read = async (bank: string, from: number, to: number) => {
+            await this.monitor.execute(`bank ${bank}`);
+            const chunk = parseMemoryDump(
+                await this.monitor.execute(`mem H ${McpUtils.hex(from)} ${McpUtils.hex(to)}`),
+            );
+
+            if (chunk.length !== to - from + 1) {
+                throw new Error(`Expected ${to - from + 1} bytes at ${McpUtils.hex(from)}, got ${chunk.length}.`);
+            }
+
+            data.push(...chunk);
+        };
+
+        try {
+            await this.monitor.execute("bank io");
+            const cia = parseMemoryDump(await this.monitor.execute("mem H $dd00 $dd00"));
+            const vic = parseMemoryDump(await this.monitor.execute("mem H $d011 $d02e"));
+
+            if (cia.length !== 1 || vic.length !== 0x1e) {
+                throw new Error("Could not read the VIC-II/CIA2 registers.");
+            }
+
+            const activeBank = 3 - (cia[0] & 3);
+            const bank = args.bank === undefined ? activeBank : McpUtils.integer(args, "bank", 0, 3);
+            const fontOffset = (vic[0x18 - 0x11] & 0x0e) * 0x400;
+            const offset =
+                args.offset === undefined
+                    ? scope === "bank"
+                        ? 0
+                        : fontOffset
+                    : McpUtils.integer(args, "offset", 0, 16383);
+            count =
+                args.count === undefined
+                    ? scope === "bank"
+                        ? Math.floor((0x4000 - offset) / CHAR_BYTES)
+                        : 256
+                    : McpUtils.integer(args, "count", 1, 2048);
+
+            if (offset + count * CHAR_BYTES > 0x4000) {
+                throw new Error("The character range must not leave the 16 KiB VIC bank.");
+            }
+
+            start = bank * 0x4000 + offset;
+            state = {
+                activeBank,
+                exportedBank: bank,
+                charBase: McpUtils.hex(activeBank * 0x4000 + fontOffset),
+                multicolorTextMode: !!(vic[0x16 - 0x11] & 0x10),
+                bitmapMode: !!(vic[0x11 - 0x11] & 0x20),
+                background: vic[0x21 - 0x11] & 15,
+                multicolor1: vic[0x22 - 0x11] & 15,
+                multicolor2: vic[0x23 - 0x11] & 15,
+            };
+
+            // The VIC sees character ROM instead of RAM at $1000-$1fff in banks 0 and 2.
+            const end = start + count * CHAR_BYTES;
+
+            for (const segment of ViceMonitorTools.vicSegments(bank, start, end)) {
+                usesRom ||= segment.rom;
+
+                for (let at = segment.from; at < segment.to; at += 4096) {
+                    const to = Math.min(segment.to, at + 4096);
+                    await (segment.rom
+                        ? read("rom", 0xd000 + (at & 0xfff), 0xd000 + ((to - 1) & 0xfff))
+                        : read("ram", at, to - 1));
+                }
+            }
+        } finally {
+            await this.monitor.execute("bank default").catch(() => undefined);
+        }
+
+        const target = resolve(path);
+        await mkdir(dirname(target), { recursive: true });
+
+        if (format === "bin") {
+            await writeFile(target, Uint8Array.from(data));
+        } else {
+            await renderFontSheet(Uint8Array.from(data), options).write(target as `${string}.png`);
+        }
+
+        return JSON.stringify({
+            path: target,
+            format,
+            scope,
+            vicAddress: McpUtils.hex(start),
+            characters: count,
+            charRomUsed: usesRom,
+            ...(format === "png" ? { ...options } : {}),
+            vic: state,
+            note: "Colors/mode are not stored with font data; vic reflects the paused instant only (raster splits and code-modified sets are not tracked).",
+        });
+    }
+
+    /** Split a VIC-visible range into RAM and character-ROM segments (ROM replaces RAM at $1000-$1fff in banks 0 and 2). */
+    private static vicSegments(bank: number, start: number, end: number) {
+        const segments: Array<{ from: number; to: number; rom: boolean }> = [];
+        const windowStart = bank === 0 ? 0x1000 : bank === 2 ? 0x9000 : -1;
+        let from = start;
+
+        while (from < end) {
+            const inWindow = windowStart >= 0 && from >= windowStart && from < windowStart + 0x1000;
+            let to = end;
+
+            if (inWindow) {
+                to = Math.min(end, windowStart + 0x1000);
+            } else if (windowStart >= 0 && from < windowStart) {
+                to = Math.min(end, windowStart);
+            }
+
+            segments.push({ from, to, rom: inWindow });
+            from = to;
+        }
+
+        return segments;
     }
 
     @McpUtils.tool(
@@ -1949,5 +2366,68 @@ export class ViceMonitorTools {
             { context: ViceMonitorTools.number(0, 2147483647, true) },
             (values) => `profile context ${values.context}`,
         );
+    }
+
+    private static fieldTool(
+        name: string,
+        description: string,
+        fields: Record<string, Field>,
+        destructive = true,
+    ): McpToolMetadata {
+        return McpUtils.toolMetadata(`vice_${name}`, `${description} Auto-connects and may pause emulation.`, fields, {
+            readOnlyHint: false,
+            destructiveHint: destructive,
+        });
+    }
+
+    private static formatExpression(value: unknown): string {
+        if (
+            typeof value !== "string" ||
+            !value.trim() ||
+            value.length > 1024 ||
+            /[\r\n]/.test(value) ||
+            !ViceMonitorTools.EXPRESSION.test(value)
+        ) {
+            throw new Error(
+                "Expected a single-line VICE expression without quotes or command separators (maximum 1024 characters).",
+            );
+        }
+        return value.trim();
+    }
+
+    private static addresses(args: Tokens): string {
+        const end = args.end || args.start;
+        if (
+            /^\$[0-9a-f]+$/i.test(args.start) &&
+            /^\$[0-9a-f]+$/i.test(end) &&
+            parseInt(end.slice(1), 16) < parseInt(args.start.slice(1), 16)
+        ) {
+            throw new Error("The end address must not precede the start address.");
+        }
+        return `${args.start} ${end}`;
+    }
+
+    private static address(): Field {
+        return {
+            schema: {
+                oneOf: [
+                    { type: "integer", minimum: 0, maximum: 65535 },
+                    { type: "string", pattern: this.ADDRESS.source },
+                ],
+                description:
+                    "Numeric address or .label in the current device; numeric strings may include C:/8:/9:/10:/11: prefixes.",
+            },
+            format: (value) => {
+                if (typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 65535) {
+                    return `$${value.toString(16).padStart(4, "0")}`;
+                }
+                if (typeof value === "string" && !/[\r\n]/.test(value) && this.ADDRESS.test(value)) {
+                    return value;
+                }
+                throw new Error(
+                    "Expected an address from 0 to 65535, a .label, or a space-qualified address such as 8:$1000.",
+                );
+            },
+        };
     }
 }

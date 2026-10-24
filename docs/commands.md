@@ -105,22 +105,24 @@ characters. Numeric conversion retains its existing monitor behavior.
 
 ## Memory and Assembly
 
-| Tool                  | VICE command | Arguments                                           | Mode     |
-| --------------------- | ------------ | --------------------------------------------------- | -------- |
-| `memory_compare`      | `compare`    | `start`, `[end]`, `destination`                     | reply    |
-| `memory_move`         | `move`       | `start`, `[end]`, `destination`                     | reply    |
-| `memory_fill`         | `fill`       | `start`, `[end]`, `bytes`                           | reply    |
-| `memory_hunt`         | `hunt`       | `start`, `[end]`, `bytes` (supports `xx`)           | reply    |
-| `memory_petscii`      | `i`          | `start`, `[end]`                                    | reply    |
-| `memory_screen_codes` | `ii`         | `start`, `[end]`                                    | reply    |
-| `memory_characters`   | `memchar`    | `start`, `[end]`                                    | reply    |
-| `memory_sprites`      | `memsprite`  | `start`, `[end]`                                    | reply    |
-| `memory_range`        | `mem H`      | `start`, `[end]`                                    | reply    |
-| `disassemble_range`   | `disass`     | `start`, `[end]`                                    | reply    |
-| `memmap_show`         | `memmapshow` | `[mask]`, `[start]`, `[end]`                        | reply    |
-| `memmap_clear`        | `memmapzap`  | None                                                | reply    |
-| `memmap_save`         | `memmapsave` | `path`, `format`: 0 BMP, 1 PCX, 2 PNG, 3 GIF, 4 IFF | reply    |
-| `assemble`            | `a`          | `address`, `instruction`                            | assemble |
+| Tool                  | VICE command   | Arguments                                                                                 | Mode     |
+| --------------------- | -------------- | ----------------------------------------------------------------------------------------- | -------- |
+| `memory_compare`      | `compare`      | `start`, `[end]`, `destination`                                                           | reply    |
+| `memory_move`         | `move`         | `start`, `[end]`, `destination`                                                           | reply    |
+| `memory_fill`         | `fill`         | `start`, `[end]`, `bytes`                                                                 | reply    |
+| `memory_hunt`         | `hunt`         | `start`, `[end]`, `bytes` (supports `xx`)                                                 | reply    |
+| `memory_petscii`      | `i`            | `start`, `[end]`                                                                          | reply    |
+| `memory_screen_codes` | `ii`           | `start`, `[end]`                                                                          | reply    |
+| `memory_characters`   | `memchar`      | `start`, `[end]`                                                                          | reply    |
+| `memory_sprites`      | `memsprite`    | `start`, `[end]`                                                                          | reply    |
+| `export_font`         | `bank`/`mem H` | `path`, `[format]`, `[scope]`, `[bank]`, `[offset]`, `[count]`, `[perRow]`, color options | file     |
+| `export_sprites`      | `bank`/`mem H` | `path`, `[format]`, `[bank]`, `[start]`, `[count]`, `[perRow]`, color options             | file     |
+| `memory_range`        | `mem H`        | `start`, `[end]`                                                                          | reply    |
+| `disassemble_range`   | `disass`       | `start`, `[end]`                                                                          | reply    |
+| `memmap_show`         | `memmapshow`   | `[mask]`, `[start]`, `[end]`                                                              | reply    |
+| `memmap_clear`        | `memmapzap`    | None                                                                                      | reply    |
+| `memmap_save`         | `memmapsave`   | `path`, `format`: 0 BMP, 1 PCX, 2 PNG, 3 GIF, 4 IFF                                       | reply    |
+| `assemble`            | `a`            | `address`, `instruction`                                                                  | assemble |
 
 The new range tools use the current device unless the address has an explicit
 numeric device prefix. The original `vice_memory` and `vice_disassemble` remain
