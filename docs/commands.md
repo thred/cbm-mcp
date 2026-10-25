@@ -1,10 +1,42 @@
 # VICE Monitor Command Catalog
 
-The server exposes 105 tools: the original 18 documented in the README and the
-87 tools below. Together they cover the command families documented in
+The server's tools cover the command families documented in
 [VICE manual chapter 12](https://vice-emu.sourceforge.io/vice_12.html). Aliases map
 to the same behavior rather than adding duplicate tools. Internal/undocumented
-monitor commands are not an unrestricted escape hatch.
+monitor commands are not an unrestricted escape hatch. The catalog starts with the
+core tools and continues with the remaining command families.
+
+## Core Tools
+
+| Tool                     | Arguments                                       | Behavior                                                                  |
+| ------------------------ | ----------------------------------------------- | ------------------------------------------------------------------------- |
+| `vice_status`            | None                                            | Report configured endpoint and local socket state; does not contact VICE. |
+| `vice_connect`           | None                                            | Connect and synchronize using a register read.                            |
+| `vice_disconnect`        | None                                            | Close the socket without sending resume or quit.                          |
+| `vice_registers`         | None                                            | Display registers in the monitor's current address space.                 |
+| `vice_memory`            | `start`, optional `length`, `format`            | Display computer memory as hex, PETSCII, or screen-code text.             |
+| `vice_disassemble`       | `start`, optional `length`                      | Disassemble a computer-memory byte range.                                 |
+| `vice_step`              | Optional `count`, `mode`                        | Step into instructions or over subroutines.                               |
+| `vice_resume`            | None                                            | Send `exit`, then close the socket without waiting for a prompt.          |
+| `vice_breakpoints`       | None                                            | List all checkpoints, including breakpoints and watchpoints.              |
+| `vice_breakpoint_set`    | `start`, optional `end`, `operations`           | Create an execution breakpoint or memory watchpoint on the computer.      |
+| `vice_checkpoint_toggle` | `id`, `enabled`                                 | Enable or disable one existing checkpoint.                                |
+| `vice_checkpoint_delete` | `id`                                            | Delete exactly one checkpoint.                                            |
+| `vice_register_set`      | `register`, `value`                             | Set one 6502 register in the current address space.                       |
+| `vice_memory_write`      | `start`, `bytes` or `text`, optional `encoding` | Write bytes or encoded text to computer memory.                           |
+| `vice_help`              | Optional `command`                              | Show all monitor help or help for a single command.                       |
+| `vice_backtrace`         | None                                            | Display the current CPU's best-guess JSR call chain.                      |
+| `vice_screen`            | None                                            | Display the text screen, not a bitmap screenshot.                         |
+| `vice_sidefx`            | Optional `enabled`                              | Query or explicitly enable/disable monitor read side effects.             |
+
+The core memory tools take decimal JSON integer addresses from 0 to 65535 and
+always use the computer address space (`C:`) and its selected bank. `length` is a
+byte count from 1 to 256, defaulting to 64. Ranges cannot wrap past `$ffff`.
+`count` ranges from 1 to 1000 and defaults to 1; `mode` is `into` (default) or
+`over`. `vice_breakpoint_set` accepts `operations` of `exec` (default), `load` and
+`store`. Registers and stepping use the current monitor address space, selected
+with `vice_device` and `vice_bank`. Unknown arguments, nulls, and invalid values
+are rejected.
 
 ## Arguments and Results
 
@@ -251,7 +283,7 @@ script playback, execution control, and build-dependent profiling/history are
 not exhaustively live-tested against the user's emulator.
 
 To add another command, define its fields and command builder in
-`src/vice/additional-tools.ts`, choose the correct execution mode, add a formatting
+`src/vice/monitor-tools.ts`, choose the correct execution mode, add a formatting
 case and rejection cases in `test/server.test.ts`, and document the tool here.
 Field formatters share validation and schema generation; no additional dependency
 or generic raw-command execution is needed.

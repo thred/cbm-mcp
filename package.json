@@ -5,6 +5,9 @@
     "license": "MIT",
     "author": "Manfred Hantschel",
     "type": "module",
+    "bin": {
+        "cbm-mcp": "./dist/cli.js"
+    },
     "main": "./dist/index.js",
     "types": "./dist/index.d.ts",
     "files": [
@@ -22,6 +25,7 @@
         "build": "npm run clean && tsc",
         "watch": "tsc --watch --preserveWatchOutput",
         "clean": "rm -rf dist",
+        "prepublishOnly": "npm run build",
         "test": "vitest run",
         "test:live": "npm run build && VICE_LIVE_TEST=1 vitest run test/live.test.ts",
         "test:typecheck": "tsc --noEmit -p tsconfig.test.json",
