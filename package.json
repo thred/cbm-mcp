@@ -26,15 +26,13 @@
         "watch": "tsc --watch --preserveWatchOutput",
         "clean": "rm -rf dist",
         "prepublishOnly": "npm run build",
+        "publish:npm": "npm test && npm run test:typecheck && npm publish --access public",
         "test": "vitest run",
         "test:live": "npm run build && VICE_LIVE_TEST=1 vitest run test/live.test.ts",
         "test:typecheck": "tsc --noEmit -p tsconfig.test.json",
         "lint": "eslint src --ext .ts --fix & npm run prettier",
         "prettier": "prettier --write .",
-        "test-build": "node build.ts",
-        "dependencies:update": "npx npm-check-updates -u && npm install",
-        "dependencies:circular": "cbm-tools % npx madge --circular --extensions ts ./",
-        "clean:src": "find ./src \\( -name '*.d.ts' -o -name '*.d.ts.map' -o -name '*.js' -o -name '*.js.map' \\) -delete"
+        "dependencies:update": "npx npm-check-updates -u && npm install"
     },
     "devDependencies": {
         "@eslint/js": "^10.0.1",
