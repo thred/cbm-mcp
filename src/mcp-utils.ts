@@ -7,6 +7,14 @@ export interface McpTool extends Tool {
     run: (args: ToolArguments) => Promise<string>;
 }
 
+export interface ToolServerOptions {
+    version?: string;
+    instructions?: string;
+    isError?: (text: string) => boolean;
+    additionalTools?: McpTool[];
+    runTool?: (name: string, run: () => Promise<string>) => Promise<string>;
+}
+
 export type McpToolMetadata = Pick<Tool, "name" | "description" | "inputSchema" | "annotations">;
 export type FormattedArguments = Record<string, string>;
 
@@ -235,22 +243,11 @@ export class McpUtils {
     }
 
     /** Create a protocol server from either a decorated catalog or an existing tool array. */
-    static createToolServer(
-        name: string,
-        catalog: object,
-        options?: { version?: string; instructions?: string; isError?: (text: string) => boolean },
-    ): Server;
-    static createToolServer(
-        name: string,
-        tools: McpTool[],
-        options?: { version?: string; instructions?: string; isError?: (text: string) => boolean },
-    ): Server;
-    static createToolServer(
-        name: string,
-        catalogOrTools: object | McpTool[],
-        options: { version?: string; instructions?: string; isError?: (text: string) => boolean } = {},
-    ): Server {
-        const tools = Array.isArray(catalogOrTools) ? catalogOrTools : this.decoratedTools(catalogOrTools);
+    static createToolServer(name: string, catalog: object, options?: ToolServerOptions): Server;
+    static createToolServer(name: string, tools: McpTool[], options?: ToolServerOptions): Server;
+    static createToolServer(name: string, catalogOrTools: object | McpTool[], options: ToolServerOptions = {}): Server {
+        const catalog = Array.isArray(catalogOrTools) ? catalogOrTools : this.decoratedTools(catalogOrTools);
+        const tools = [...catalog, ...(options.additionalTools ?? [])];
         const names = new Set<string>();
         for (const tool of tools) {
             if (names.has(tool.name)) {
@@ -284,10 +281,13 @@ export class McpUtils {
                         throw new Error(`${argumentName} must not be null.`);
                     }
                 }
-                const text = await tool.run(args);
+                const text = options.runTool
+                    ? await options.runTool(tool.name, () => tool.run(args))
+                    : await tool.run(args);
                 if (options.isError?.(text)) {
                     throw new Error(text);
                 }
+
                 return { content: [{ type: "text", text: text || "Command completed." }] };
             } catch (error) {
                 return {

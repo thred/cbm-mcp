@@ -13,8 +13,8 @@ dependencies:
   mcp:
     - name: cbm-monitor-mcp
       registry: false
-      transport: stdio
-      command: node
-      args: ["${workspaceFolder}/dist/stdio.js"]
+      transport: http
+      url: "http://127.0.0.1:3000/mcp"
 includes: auto
-scripts: {}
+scripts:
+  start: "npm run start:http"

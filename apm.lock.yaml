@@ -18,7 +18,7 @@ deployments:
       owners:
           - .
       active_owner: .
-      content_hash: sha256:36827df153a411b75fce1efab4ff2bd2dba0de47208de68b4f76413a7b256937
+      content_hash: sha256:42e9eb0a96be9a0f6632c930861d5ff0d717e0d7514ba3f8e1a6820ca03d2e67
     - kind: project-relative
       target: legacy
       value: .agents/skills/cbm-mcp/references/6510-assembly.md
@@ -69,11 +69,9 @@ mcp_servers:
 mcp_configs:
     cbm-monitor-mcp:
         name: cbm-monitor-mcp
-        transport: stdio
-        args:
-            - ${workspaceFolder}/dist/stdio.js
+        transport: http
         registry: false
-        command: node
+        url: http://127.0.0.1:3000/mcp
 mcp_target_servers:
     copilot:
         - cbm-monitor-mcp
@@ -86,7 +84,7 @@ local_deployed_files:
     - .agents/skills/cbm-mcp/references/c64-memory-map.md
     - .agents/skills/cbm-mcp/references/vic2.md
 local_deployed_file_hashes:
-    .agents/skills/cbm-mcp/SKILL.md: sha256:36827df153a411b75fce1efab4ff2bd2dba0de47208de68b4f76413a7b256937
+    .agents/skills/cbm-mcp/SKILL.md: sha256:42e9eb0a96be9a0f6632c930861d5ff0d717e0d7514ba3f8e1a6820ca03d2e67
     .agents/skills/cbm-mcp/references/6510-assembly.md: sha256:f855e805a7b03a7c47081a005a458e860d189af21d847b377a4bdfd3d3da2456
     .agents/skills/cbm-mcp/references/c64-memory-map.md: sha256:f1211649ba6b43923046731e1058ef08905a446db0212ed609ebf1aa4485db43
     .agents/skills/cbm-mcp/references/vic2.md: sha256:43fdc9444c04e91ca6ea3abb7dd45b202c3e0b827e4d096ab0edfb6888ea4f01

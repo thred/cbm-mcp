@@ -1,9 +1,9 @@
 {
     "servers": {
         "cbm-monitor-mcp": {
-            "type": "stdio",
-            "command": "node",
-            "args": ["${workspaceFolder}/dist/stdio.js"]
+            "type": "http",
+            "url": "http://127.0.0.1:3000/mcp",
+            "headers": {}
         }
     },
     "inputs": []

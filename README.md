@@ -8,8 +8,9 @@ An MCP server that lets AI agents debug Commodore software in a locally running
 [VICE](https://vice-emu.sourceforge.io/) emulator, through VICE's text remote
 monitor.
 
-It runs **locally over stdio**, next to VICE. Nothing is hosted, and the
-unauthenticated VICE monitor should never be exposed beyond loopback.
+It runs locally over stdio or as a loopback-only shared Streamable HTTP service
+with optional authentication. The unauthenticated VICE monitor should never be
+exposed beyond loopback.
 
 ## What You Can Do
 
@@ -79,6 +80,117 @@ Optional environment variables, set in the client's `env` object:
 Invalid settings fail startup with a diagnostic on stderr. Starting the MCP does
 not connect to or pause VICE.
 
+### Shared HTTP Service
+
+Instead of starting one stdio MCP per client, run one persistent service alongside
+VICE. It owns a single monitor connection shared by MCP sessions. With Node.js and
+npm installed, start the published package from any directory:
+
+```sh
+npx --yes cbm-mcp@latest --http
+```
+
+The HTTP service must first be published to npm; an older published version may
+not support `--http`. Pin a version instead of `latest` for reproducible setups.
+Leave the command running while debugging; stop it with Ctrl+C. It does not start
+VICE. In a source checkout, run `npm install`, `npm run build`, then
+`npm run start:http` (or `apm run`).
+
+The service prints its URL on stderr and listens only on `127.0.0.1:3000`. To
+change the port set `CBM_MCP_HTTP_PORT` (1-65535); the existing `VICE_*`
+settings also apply. Without a token, the service warns on startup: **any local
+process can use its tools**, including changing VICE state and accessing files.
+The debugging lease does not prevent unauthorized access. The service validates
+the Host header and rejects browser-origin requests, but loopback and these
+checks are not an authentication boundary.
+
+For example, configure VS Code to use the service without authentication:
+
+```json
+{
+    "servers": {
+        "cbm-mcp": {
+            "type": "http",
+            "url": "http://127.0.0.1:3000/mcp"
+        }
+    }
+}
+```
+
+For optional bearer authentication, set a 32-256 character URL-safe token
+before starting the service:
+
+```sh
+export CBM_MCP_HTTP_TOKEN="$(openssl rand -hex 32)"
+npx --yes cbm-mcp@latest --http
+```
+
+If set, the token must be nonempty and valid; every request, including session
+cleanup, must include `Authorization: Bearer <token>`. Supply the token to your
+MCP client using its secure configuration mechanism. In VS Code, for example:
+
+```json
+{
+    "inputs": [
+        {
+            "type": "promptString",
+            "id": "cbm-mcp-token",
+            "description": "CBM MCP HTTP bearer token",
+            "password": true
+        }
+    ],
+    "servers": {
+        "cbm-mcp": {
+            "type": "http",
+            "url": "http://127.0.0.1:3000/mcp",
+            "headers": {
+                "Authorization": "Bearer ${input:cbm-mcp-token}"
+            }
+        }
+    }
+}
+```
+
+Use the **HTTP configuration instead of stdio** in each client; otherwise a
+stdio instance can still compete for VICE. VS Code's Copilot harness does not
+forward servers requiring interactive input variables; for that harness use a
+supported environment-variable reference in a portable MCP configuration
+instead. See the [VS Code MCP configuration reference](https://code.visualstudio.com/docs/agents/reference/mcp-configuration#_authentication-and-secrets).
+Do not commit a token or put it in a shared configuration. Any client with the
+token (or any local client when authentication is disabled) can control VICE
+and request a lease takeover; use only trusted clients.
+Browser-origin requests are rejected. The HTTP token does not secure VICE's
+separate remote monitor.
+
+The first session to call a VICE tool acquires the debugging lease. Other sessions
+can inspect `vice_lease_status` but cannot operate VICE until the owner uses
+`vice_lease_release` or a user explicitly authorizes `vice_lease_takeover` with
+the current lease ID and `confirm: true`. Takeover waits for an in-flight tool
+call to finish. A disconnected session retains its lease until a confirmed
+takeover; neither disconnecting a client nor releasing a lease resumes VICE or
+removes checkpoints and labels. These remain in VICE and must be inspected and
+cleaned up deliberately. Stopping the service closes the monitor connection but
+does not resume or quit the emulator. Sessions and leases are lost on service
+restart. HTTP sessions are limited to 64 until explicitly closed or the service
+restarts. A client can request `vice_sessions_close_others` with
+`confirm: true` to close all other sessions; this does not release their lease.
+Session status indicates whether the server still knows the session, not whether
+its client is still alive: a client that disappears without a session DELETE
+cannot be detected reliably.
+
+If all 64 slots are occupied and no existing client is available to close other
+sessions, send a `DELETE` to `/sessions` with `X-CBM-Confirm: true` and the
+bearer token if configured. This explicitly closes **all** MCP sessions after pending
+tools finish, but preserves the lease and VICE state. A new session must then
+use a confirmed takeover of the old lease. Do not retry a timed-out cleanup
+without checking the result; it may already have completed.
+
+`vice_lease_status` includes connection state and the last monitor failure, but
+cannot determine whether VICE is executing. If the handshake times out without
+another monitor client, VICE may retain a stale session; a shared service cannot
+guarantee recovery. Check VICE's UI before reconnecting. Never blindly retry a
+timed-out state-changing command.
+
 ## Agent Skill via APM
 
 This repository is also an [APM](https://github.com/microsoft/apm) package. It
@@ -90,10 +202,20 @@ into a project with:
 apm install thred/cbm-mcp
 ```
 
-APM deploys the skill for your configured agent targets. The MCP server entry in
-[apm.yml](apm.yml) launches a local build (`dist/stdio.js`), so it only works
-inside a source checkout; configure the server for other projects as described
-in Quick Start.
+APM deploys the skill and declares the shared HTTP endpoint for supported agent
+targets. APM may block MCP servers inherited from a dependency unless explicitly
+trusted; if it does not configure the endpoint, add it directly in your project:
+
+```sh
+apm mcp install cbm-monitor-mcp --transport http --url http://127.0.0.1:3000/mcp
+```
+
+Then start the HTTP service with the `npx` command in
+[Shared HTTP Service](#shared-http-service). APM does not install or run the npm
+package or VICE. Run only one HTTP service, and remove or disable older stdio
+entries so they do not compete for the VICE monitor. APM's `apm run` uses
+scripts in the **current project's** `apm.yml`; installing this package as a
+dependency does not add its `start` script to the consuming project.
 
 ## Safety
 

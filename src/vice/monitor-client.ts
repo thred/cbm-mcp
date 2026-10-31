@@ -34,6 +34,7 @@ export class MonitorClient {
     private buffer = "";
     private pending?: PendingReply;
     private queue: Promise<unknown> = Promise.resolve();
+    private failure?: { phase: "connection" | "command"; message: string; time: string };
 
     constructor(options: MonitorOptions = {}) {
         this.host = options.host ?? "127.0.0.1";
@@ -55,6 +56,10 @@ export class MonitorClient {
 
     get connected(): boolean {
         return this.ready && !!this.socket && !this.socket.destroyed;
+    }
+
+    get lastFailure(): { phase: "connection" | "command"; message: string; time: string } | undefined {
+        return this.failure;
     }
 
     /** Establish a session and consume VICE's initial prompt and register reply. */
@@ -96,13 +101,13 @@ export class MonitorClient {
             await new Promise<void>((resolve, reject) => {
                 const timer = setTimeout(() => {
                     const error = new Error("Timed out sending command to VICE.");
-                    this.fail(error);
+                    this.fail(error, true);
                     reject(error);
                 }, this.timeoutMs);
                 socket.write(`${command}\n`, (error) => {
                     clearTimeout(timer);
                     if (error) {
-                        this.fail(error);
+                        this.fail(error, true);
                         reject(error);
                     } else {
                         resolve();
@@ -151,18 +156,19 @@ export class MonitorClient {
         });
         socket.on("error", (error) => {
             if (this.socket === socket) {
-                this.fail(error);
+                this.fail(error, true);
             }
         });
         socket.on("close", () => {
             if (this.socket === socket) {
-                this.fail(new Error("VICE closed the monitor connection."));
+                this.fail(new Error("VICE closed the monitor connection."), true);
             }
         });
         const handshake = this.waitForReply(true);
         socket.connect({ host: this.host, port: this.port }, () => socket.write("registers\n"));
         await handshake;
         this.ready = true;
+        this.failure = undefined;
     }
 
     private request(command: string): Promise<string> {
@@ -174,11 +180,15 @@ export class MonitorClient {
     private waitForReply(requireOutput: boolean): Promise<string> {
         return new Promise((resolve, reject) => {
             const timer = setTimeout(() => {
+                const phase = requireOutput ? "connection handshake" : "command";
                 this.fail(
-                    new Error(`VICE monitor timed out after ${this.timeoutMs}
-                     ms (${this.host}
-                    :${this.port}
-                    ).`),
+                    new Error(
+                        `VICE monitor ${phase} timed out after ${this.timeoutMs} ms (${this.host}:${this.port}). ` +
+                            (requireOutput
+                                ? "Check for another client or a stale VICE monitor session."
+                                : "The command may have executed; do not blindly retry state-changing operations."),
+                    ),
+                    true,
                 );
             }, this.timeoutMs);
             this.pending = { resolve, reject, timer, requireOutput };
@@ -188,7 +198,7 @@ export class MonitorClient {
     private receive(chunk: string): void {
         this.buffer += chunk;
         if (Buffer.byteLength(this.buffer) > MAX_REPLY_BYTES) {
-            this.fail(new Error("VICE monitor reply exceeded the 1 MiB limit."));
+            this.fail(new Error("VICE monitor reply exceeded the 1 MiB limit."), true);
             return;
         }
 
@@ -212,7 +222,14 @@ export class MonitorClient {
         }
     }
 
-    private fail(error: Error): void {
+    private fail(error: Error, record = false): void {
+        if (record) {
+            this.failure = {
+                phase: this.ready ? "command" : "connection",
+                message: error.message,
+                time: new Date().toISOString(),
+            };
+        }
         const socket = this.socket;
         this.socket = undefined;
         this.ready = false;

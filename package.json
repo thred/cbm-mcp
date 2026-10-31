@@ -21,6 +21,7 @@
     },
     "scripts": {
         "start": "node dist/stdio.js",
+        "start:http": "node dist/cli.js --http",
         "dev": "tsx src/stdio.ts",
         "build": "npm run clean && tsc",
         "watch": "tsc --watch --preserveWatchOutput",

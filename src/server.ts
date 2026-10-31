@@ -1,4 +1,4 @@
-import { McpUtils } from "./mcp-utils.js";
+import { McpUtils, type ToolServerOptions } from "./mcp-utils.js";
 import { MonitorClient } from "./vice/monitor-client.js";
 import { ViceMonitorTools } from "./vice/monitor-tools.js";
 
@@ -13,9 +13,17 @@ Establish user intent before mutations, execution control, or file operations; p
 vice_resume sends exit and disconnects; another inspection pauses again. Disconnect does not resume or quit. Keep emulation running when no active debugging need requires a pause; resume after inspection unless the user asked to leave it paused. Longer pauses are fine when justified. Report facts versus hypotheses, changes/cleanup, and final execution state.`;
 
 /** Creates the text-monitor MCP server without choosing a transport. */
-export function createViceMonitorServer(monitor = new MonitorClient()) {
+export function createViceMonitorServer(
+    monitor = new MonitorClient(),
+    options: Pick<ToolServerOptions, "additionalTools" | "runTool"> = {},
+) {
     return McpUtils.createToolServer("cbm-vice-text-monitor", new ViceMonitorTools(monitor), {
-        instructions: DEBUGGER_INSTRUCTIONS,
+        ...options,
+        instructions:
+            DEBUGGER_INSTRUCTIONS +
+            (options.runTool
+                ? "\n\nShared HTTP mode: the first monitor tool acquires the session lease. Use vice_lease_status, vice_lease_release, or confirmed vice_lease_takeover. Do not take over without user consent."
+                : ""),
         isError: (text) => /(?:^|\n)\s*(?:ERROR\b|Unknown command\b)/i.test(text),
     });
 }

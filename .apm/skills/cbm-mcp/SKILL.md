@@ -49,6 +49,10 @@ one chat or task blocks every other chat, agent, or tool until it is closed.
   `vice_resume` if the program should keep running, then `vice_disconnect`.
   `vice_resume` closes the socket itself; `vice_disconnect` alone neither resumes
   nor quits VICE, and `vice_quit` must not be used for this.
+- In shared HTTP mode, release your debugging lease with `vice_lease_release`
+  when finished or handing off. `vice_resume` and `vice_disconnect` do not
+  release the lease. Inspect `vice_lease_status` if another session owns it;
+  never take over without explicit user consent.
 - Also release the connection before handing over to another chat, agent, or
   external monitor client, and before telling the user to use the VICE monitor.
 - If a connect or command fails with a closed socket or timeout while no other

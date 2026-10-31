@@ -1,11 +1,10 @@
 {
     "mcpServers": {
         "cbm-monitor-mcp": {
-            "type": "local",
+            "type": "http",
+            "url": "http://127.0.0.1:3000/mcp",
             "tools": ["*"],
-            "id": "",
-            "command": "node",
-            "args": ["${workspaceFolder}/dist/stdio.js"]
+            "id": ""
         }
     }
 }

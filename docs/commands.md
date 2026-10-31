@@ -38,6 +38,27 @@ byte count from 1 to 256, defaulting to 64. Ranges cannot wrap past `$ffff`.
 with `vice_device` and `vice_bank`. Unknown arguments, nulls, and invalid values
 are rejected.
 
+### Shared HTTP Lease Tools
+
+These tools are available only in the standalone HTTP service; see the
+[shared service setup](../README.md#shared-http-service). The first session to
+call a VICE tool (except `vice_status`) acquires the exclusive lease. Monitor
+operations are serialized across sessions, including complete multi-command
+tools.
+
+| Tool                         | Arguments                  | Behavior                                                                        |
+| ---------------------------- | -------------------------- | ------------------------------------------------------------------------------- |
+| `vice_lease_status`          | None                       | Report lease, socket state and last failure without contacting VICE.            |
+| `vice_lease_release`         | None                       | Owner releases its lease; leaves the VICE connection and execution state alone. |
+| `vice_lease_takeover`        | `leaseId`, `confirm: true` | Take over the current lease after explicit user consent, without resuming VICE. |
+| `vice_sessions_close_others` | `confirm: true`            | Close other HTTP sessions without releasing their lease or changing VICE state. |
+
+Lease status reports whether the server still knows the owner session, not
+whether its client is alive or whether the emulator is running. An abandoned or disconnected session retains its lease;
+use its current ID for an authorized takeover. Calls queued after a session is
+closed are rejected. Release and takeover do not delete any VICE checkpoints or
+labels. A service restart discards lease/session state, not VICE state.
+
 ## Arguments and Results
 
 - Parameters in brackets are optional. Tool schemas describe required fields and
