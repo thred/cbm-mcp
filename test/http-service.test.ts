@@ -2,9 +2,13 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { request } from "node:http";
 import { createServer, type Socket } from "node:net";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { startHttpService, type HttpService } from "../src/http-service.js";
 import { MonitorClient } from "../src/vice/monitor-client.js";
+import * as liveCapture from "../src/analysis-engine/c64-live-capture.js";
 
 const TOKEN = "0123456789abcdef0123456789abcdef";
 const cleanup: Array<() => Promise<void>> = [];
@@ -88,6 +92,78 @@ function text(result: unknown): string {
 }
 
 describe("shared HTTP MCP", () => {
+    it("releases the lease after successful capture but retains it after failure", async () => {
+        const { service } = await fixture();
+        const first = await connect(service);
+        const second = await connect(service);
+        const bytes = new Uint8Array(65536);
+        bytes.set([0xea, 0x60], 0x1000);
+        const capture = vi.spyOn(liveCapture, "captureC64Ram").mockResolvedValue({
+            bytes,
+            pc: 0x1000,
+            direction: 0x2f,
+            port: 0x37,
+            banking: { cartridge: "unknown", direction: 0x2f, data: 0x37 },
+            capturedAt: new Date().toISOString(),
+            labels: [],
+        });
+        const created = await first.client.callTool({
+            name: "vice_analysis_capture",
+            arguments: { machine: "c64", programId: "test" },
+        });
+        expect(created.isError, text(created)).not.toBe(true);
+        const { snapshotId } = JSON.parse(text(created)) as { snapshotId: string };
+        expect((await second.client.callTool({ name: "vice_registers" })).isError).not.toBe(true);
+        expect(
+            (await first.client.callTool({ name: "vice_analysis_search", arguments: { snapshotId, text: "NOP" } }))
+                .isError,
+        ).not.toBe(true);
+        expect(
+            (await second.client.callTool({ name: "vice_analysis_search", arguments: { snapshotId, text: "NOP" } }))
+                .isError,
+        ).toBe(true);
+        expect((await second.client.callTool({ name: "vice_lease_release" })).isError).not.toBe(true);
+        capture.mockRejectedValueOnce(new Error("capture failed"));
+        expect(
+            (await first.client.callTool({ name: "vice_analysis_capture", arguments: { machine: "c64", snapshotId } }))
+                .isError,
+        ).toBe(true);
+        expect((await second.client.callTool({ name: "vice_registers" })).isError).toBe(true);
+        expect(
+            (await first.client.callTool({ name: "vice_analysis_search", arguments: { snapshotId, text: "NOP" } }))
+                .isError,
+        ).not.toBe(true);
+        expect((await first.client.callTool({ name: "vice_lease_release" })).isError).not.toBe(true);
+    });
+
+    it("isolates offline analyses per session without acquiring or taking over the VICE lease", async () => {
+        const directory = await mkdtemp(join(tmpdir(), "cbm-http-analysis-"));
+        cleanup.push(() => rm(directory, { recursive: true }));
+        const path = join(directory, "test.prg");
+        await writeFile(path, Uint8Array.of(0x00, 0x10, 0xea, 0x60));
+        const { service, commands, connections } = await fixture();
+        const first = await connect(service);
+        const second = await connect(service);
+        expect((await first.client.callTool({ name: "vice_registers" })).isError).not.toBe(true);
+        const created = await second.client.callTool({
+            name: "vice_analysis_create",
+            arguments: { path, format: "prg", entryPoints: [4096] },
+        });
+        expect(created.isError).not.toBe(true);
+        const { snapshotId } = JSON.parse(text(created)) as { snapshotId: string };
+        expect(
+            (await second.client.callTool({ name: "vice_analysis_search", arguments: { snapshotId, text: "NOP" } }))
+                .isError,
+        ).not.toBe(true);
+        expect(
+            (await first.client.callTool({ name: "vice_analysis_search", arguments: { snapshotId, text: "NOP" } }))
+                .isError,
+        ).toBe(true);
+        expect((await second.client.callTool({ name: "vice_registers" })).isError).toBe(true);
+        expect(connections()).toBe(1);
+        expect(commands).toEqual(["registers", "registers"]);
+    });
+
     it("allows local MCP clients without a token and warns about unauthenticated access", async () => {
         const warning = vi.spyOn(console, "error").mockImplementation(() => undefined);
         const { service, commands, connections } = await fixture(false);

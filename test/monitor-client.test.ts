@@ -45,6 +45,48 @@ async function monitor(onCommand: (command: string, socket: Socket) => void, tim
 }
 
 describe("MonitorClient", () => {
+    it("does not reconnect after an exclusive session loses its connection", async () => {
+        const { client, commands } = await monitor((command, socket) => {
+            if (command === "close") socket.destroy();
+            else socket.write("ok\n(C:$1234) ");
+        });
+        await client.withExclusiveSession(async (session) => {
+            expect(await session.execute("first")).toBe("ok");
+            await expect(session.execute("close")).rejects.toThrow("closed");
+            await expect(session.execute("later")).rejects.toThrow("disconnected during inspection");
+        });
+        expect(commands).toEqual(["registers", "first", "close"]);
+    });
+
+    it("serializes an exclusive multi-command session and rejects use after it ends", async () => {
+        const { client, commands } = await monitor((command, socket) => {
+            setImmediate(() => socket.write(`${command}\n(C:$1234) `));
+        });
+        let finished: (() => void) | undefined;
+        const gate = new Promise<void>((resolve) => {
+            finished = resolve;
+        });
+        let started: (() => void) | undefined;
+        const ready = new Promise<void>((resolve) => {
+            started = resolve;
+        });
+        let expired: (() => Promise<string>) | undefined;
+        const session = client.withExclusiveSession(async (exclusive) => {
+            expired = () => exclusive.execute("late");
+            expect(await exclusive.execute("first")).toBe("first");
+            started?.();
+            await gate;
+            expect(await exclusive.execute("second")).toBe("second");
+        });
+        await ready;
+        const queued = client.execute("outside");
+        finished?.();
+        await session;
+        expect(await queued).toBe("outside");
+        expect(commands).toEqual(["registers", "first", "second", "outside"]);
+        await expect(expired?.()).rejects.toThrow();
+    });
+
     it("consumes the greeting and assembles fragmented replies and drive prompts", async () => {
         const { client } = await monitor((_command, socket) => {
             socket.write("first\r\nsecond\r\n(8:$");
