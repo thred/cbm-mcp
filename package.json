@@ -1,6 +1,6 @@
 {
     "name": "cbm-mcp",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "description": "MCP for debugging CBM software using ViceEmu",
     "license": "MIT",
     "author": "Manfred Hantschel",
