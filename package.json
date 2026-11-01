@@ -6,7 +6,8 @@
     "author": "Manfred Hantschel",
     "type": "module",
     "bin": {
-        "cbm-mcp": "./dist/cli.js"
+        "cbm-mcp": "./dist/cli.js",
+        "cbm-analyze": "./dist/analyze-cli.js"
     },
     "main": "./dist/index.js",
     "types": "./dist/index.d.ts",

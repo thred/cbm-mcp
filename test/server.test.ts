@@ -144,6 +144,8 @@ describe("VICE MCP tools", () => {
         expect(instructions!.length).toBeLessThan(1800);
         for (const guidance of [
             "vice_status",
+            "vice_analysis_status",
+            "prefer vice_analysis_capture",
             "Use the current PC",
             "pauses emulation",
             "53280 = $d020",
@@ -167,6 +169,8 @@ describe("VICE MCP tools", () => {
             ["vice_backtrace", "not a reliable source-level stack"],
             ["vice_screen", "does not establish current CPU activity"],
             ["vice_resource_get", "documented mapping"],
+            ["vice_disassemble", "Prefer analysis snapshot queries"],
+            ["vice_disassemble_range", "Prefer analysis snapshot queries"],
             ["vice_keyboard", "Resume to process input"],
             ["vice_keyboard", "never both"],
             ["vice_keyboard", "inspect before retrying"],
@@ -261,7 +265,7 @@ describe("VICE MCP tools", () => {
         const { tools } = await client.listTools();
         expect(
             tools
-                .filter((tool) => !legacy.has(tool.name))
+                .filter((tool) => !legacy.has(tool.name) && !tool.name.startsWith("vice_analysis_"))
                 .map((tool) => tool.name)
                 .sort(),
         ).toEqual(commandCases.map(([name]) => `vice_${name}`).sort());

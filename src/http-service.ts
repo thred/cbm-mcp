@@ -260,8 +260,17 @@ export async function startHttpService(options: HttpServiceOptions): Promise<Htt
             runTool: (name, run) =>
                 lease.run(
                     id,
-                    run,
-                    name !== "vice_status" && !name.startsWith("vice_lease_") && name !== "vice_sessions_close_others",
+                    async () => {
+                        const result = await run();
+                        if (name === "vice_analysis_capture") {
+                            lease.release(id);
+                        }
+                        return result;
+                    },
+                    name !== "vice_status" &&
+                        !name.startsWith("vice_lease_") &&
+                        (!name.startsWith("vice_analysis_") || name === "vice_analysis_capture") &&
+                        name !== "vice_sessions_close_others",
                 ),
         });
         mcp.onclose = () => {

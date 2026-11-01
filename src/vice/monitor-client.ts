@@ -15,6 +15,12 @@ interface PendingReply {
     assembly?: boolean;
 }
 
+export interface MonitorExclusiveSession {
+    execute(command: string): Promise<string>;
+    resume(): Promise<void>;
+    readonly connected: boolean;
+}
+
 const PROMPT = /(?:^|\r?\n)\((?:C|8|9|10|11):\$[0-9a-f]{4,8}\) ?/i;
 const MAX_REPLY_BYTES = 1024 * 1024;
 
@@ -84,6 +90,61 @@ export class MonitorClient {
         });
     }
 
+    /** Serialize a multi-command inspection against all other monitor operations. */
+    withExclusiveSession<T>(operation: (session: MonitorExclusiveSession) => Promise<T>): Promise<T> {
+        return this.enqueue(async () => {
+            let active = true;
+            let busy = false;
+            let opened = false;
+            const isConnected = () => this.connected;
+            const run = async <R>(action: () => Promise<R>): Promise<R> => {
+                if (!active || busy) {
+                    throw new Error("Monitor inspection session is closed or busy.");
+                }
+                busy = true;
+                try {
+                    return await action();
+                } finally {
+                    busy = false;
+                }
+            };
+            try {
+                return await operation({
+                    get connected() {
+                        return active && isConnected();
+                    },
+                    execute: (command) => {
+                        return run(async () => {
+                            if (!command.trim() || /[\r\n\0]/.test(command)) {
+                                throw new Error(
+                                    "Expected one nonempty monitor command without line breaks or NUL bytes.",
+                                );
+                            }
+                            if (opened && !this.connected) {
+                                throw new Error(
+                                    "Monitor disconnected during inspection; VICE execution state is unknown.",
+                                );
+                            }
+                            await this.open();
+                            opened = true;
+                            return this.request(command);
+                        });
+                    },
+                    resume: () => {
+                        return run(async () => {
+                            if (!this.connected) {
+                                throw new Error("Monitor is disconnected; VICE execution state is unknown.");
+                            }
+                            await this.sendConnected("exit");
+                        });
+                    },
+                });
+            } finally {
+                active = false;
+            }
+        });
+    }
+
     /** VICE's exit command resumes execution without a reply prompt. */
     resume(): Promise<void> {
         return this.send("exit");
@@ -97,25 +158,29 @@ export class MonitorClient {
 
         return this.enqueue(async () => {
             await this.open();
-            const socket = this.socket!;
-            await new Promise<void>((resolve, reject) => {
-                const timer = setTimeout(() => {
-                    const error = new Error("Timed out sending command to VICE.");
+            await this.sendConnected(command);
+        });
+    }
+
+    private async sendConnected(command: string): Promise<void> {
+        const socket = this.socket!;
+        await new Promise<void>((resolve, reject) => {
+            const timer = setTimeout(() => {
+                const error = new Error("Timed out sending command to VICE.");
+                this.fail(error, true);
+                reject(error);
+            }, this.timeoutMs);
+            socket.write(`${command}\n`, (error) => {
+                clearTimeout(timer);
+                if (error) {
                     this.fail(error, true);
                     reject(error);
-                }, this.timeoutMs);
-                socket.write(`${command}\n`, (error) => {
-                    clearTimeout(timer);
-                    if (error) {
-                        this.fail(error, true);
-                        reject(error);
-                    } else {
-                        resolve();
-                    }
-                });
+                } else {
+                    resolve();
+                }
             });
-            this.fail(new Error("Session closed after command delivery."));
         });
+        this.fail(new Error("Session closed after command delivery."));
     }
 
     /** Assemble one instruction and terminate VICE's interactive assembly mode atomically. */

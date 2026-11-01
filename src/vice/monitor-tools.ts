@@ -233,7 +233,7 @@ export class ViceMonitorTools {
     @McpUtils.tool({
         name: "vice_disassemble",
         description:
-            "Disassemble a computer-memory byte range. The last instruction may extend beyond the range. Auto-connects and may pause.",
+            "Disassemble the live computer view. Prefer analysis snapshot queries for program analysis; use this for current CPU-visible bytes. May pause.",
         inputSchema: ViceMonitorTools.RANGE_SCHEMA,
     })
     disassemble(args: ToolArguments): Promise<string> {
@@ -1430,7 +1430,7 @@ export class ViceMonitorTools {
     @McpUtils.tool(
         ViceMonitorTools.fieldTool(
             "disassemble_range",
-            "Disassemble an explicit memory range, supporting labels and drive address spaces.",
+            "Disassemble the live memory view, including drive spaces. Prefer analysis snapshot queries for C64 program analysis.",
             ViceMonitorTools.range,
             false,
         ),
